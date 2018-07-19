@@ -275,6 +275,11 @@ contract PlasmaChainManager {
                 amount += transactionRecords[TransactionHash[i]].amount;
             }
         }
+        for(uint ii = 0;ii<TransactionHash.length;ii++){
+            if(transactionRecords[TransactionHash[ii]].form == withdrawRecords[withdrawalId].who){
+                amount -= transactionRecords[TransactionHash[ii]].amount;
+            }
+        }
         if(amount != withdrawRecords[withdrawalId].amount){
             //  withdrawRecords[withdrawalId].challengeSuccess = true;
             withdrawRecords[withdrawalId].ischallenge = true;
@@ -292,6 +297,11 @@ contract PlasmaChainManager {
         for(uint i = 0;i<TransactionHash.length;i++){
             if(transactionRecords[TransactionHash[i]].to == withdrawRecords[withdrawalId].who){
                 amount += transactionRecords[TransactionHash[i]].amount;
+            }
+        }
+        for(uint ii = 0;ii<TransactionHash.length;ii++){
+            if(transactionRecords[TransactionHash[ii]].form == withdrawRecords[withdrawalId].who){
+                amount -= transactionRecords[TransactionHash[ii]].amount;
             }
         }
         if(amount != withdrawRecords[withdrawalId].amount){
