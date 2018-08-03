@@ -68,10 +68,13 @@ contract PlasmaChainManager {
     }
 
     struct WithdrawRecord {
+        uint256 blockNumber;
+        uint256 txIndex;
+        uint256 oIndex;
         address who;
         address[] vote_permission;
         uint256 amount;
-        bool votingComplete;
+        // bool votingComplete;
         uint256 expiredTime;
         bool ischallenge;
         address whoChallenge;
@@ -111,7 +114,7 @@ contract PlasmaChainManager {
     event ApplyVerifier(address applyer);
     
     function applyVerifier() payable public{
-        require(msg.value == 1 ether);
+        // require(msg.value == 1 ether);
         require(!verifier[msg.sender]);
         
         verifier[msg.sender] = true;
@@ -203,170 +206,194 @@ contract PlasmaChainManager {
     event WithdrawalStartedEvent(bytes32 withdrawalId);
 
     function startWithdrawal(
-        uint256 amount
+        uint256 blockNumber,
+        uint256 txIndex,
+        uint256 oIndex,
+        bytes targetTx,
+        bytes proof
     )
         public payable
         returns (bytes32 withdrawalId)
     {
-        require(msg.value == 1 ether);
-        bytes32 withdrawalId_ = keccak256(msg.sender,amount,now); 
-        WithdrawRecord storage record = withdrawRecords[withdrawalId_];
-        require(record.expiredTime == 0  && !record.votingComplete);
-
-        // Construct a new withdrawal.
-        record.who = msg.sender;
-        record.amount = amount;
-
-        WithdrawalStartedEvent(withdrawalId_);
-        return withdrawalId_;
-    }
-    
-    event WithdrawalPermissionEvent(uint256 withdrawalId);
-    
-    function persmissionWithdrawal(
-        bytes32 withdrawalId
-    )
-        public
-        returns (bool permission)
-    {
-        require(verifier[msg.sender]);
-        require(withdrawRecords[withdrawalId].vote_permission.length<1);
-        require(!withdrawRecords[withdrawalId].votingComplete);
-
-        bool isnotadd = true;
-        for(uint8 i =0;i<withdrawRecords[withdrawalId].vote_permission.length;i++){
-            if(withdrawRecords[withdrawalId].vote_permission[i] == msg.sender) isnotadd = false;
-        }
-        if(isnotadd){
-            withdrawRecords[withdrawalId].vote_permission.push(msg.sender);
-            return true;
-        } else
-            return true;
-    }
-    
-    function voteCompleteWithdrawal(bytes32 withdrawalId) public
-    {
-        require(withdrawRecords[withdrawalId].vote_permission.length>=1);
-        require(!withdrawRecords[withdrawalId].ispay);
-        require(!withdrawRecords[withdrawalId].votingComplete);
-                
-        uint8 verifierQualified = 0;
-        for(uint8 i =0;i<withdrawRecords[withdrawalId].vote_permission.length;i++){
-            if(verifier[withdrawRecords[withdrawalId].vote_permission[i]]) verifierQualified++;
-        }
-        
-        if(verifierQualified >= 1){
-            withdrawRecords[withdrawalId].votingComplete = true;
-            withdrawRecords[withdrawalId].expiredTime = now + 10 minutes;
-        } 
-    }
-
-    event WithdrawalChallengedEvent(uint256 withdrawalId);
-
-    function challengeWithdrawal(bytes32 withdrawalId,bytes32[] TransactionHash) public payable {
-        require(msg.value == 1 ether);
-        require(withdrawRecords[withdrawalId].votingComplete);
-        require(!withdrawRecords[withdrawalId].ispay);
-        require(withdrawRecords[withdrawalId].expiredTime >= now);
-        require(!withdrawRecords[withdrawalId].ischallenge);
-        uint amount;
-        for(uint i = 0;i<TransactionHash.length;i++){
-            if(transactionRecords[TransactionHash[i]].to == withdrawRecords[withdrawalId].who){
-                amount += transactionRecords[TransactionHash[i]].amount;
-            }
-        }
-        for(uint ii = 0;ii<TransactionHash.length;ii++){
-            if(transactionRecords[TransactionHash[ii]].form == withdrawRecords[withdrawalId].who){
-                amount -= transactionRecords[TransactionHash[ii]].amount;
-            }
-        }
-        if(amount != withdrawRecords[withdrawalId].amount){
-            //  withdrawRecords[withdrawalId].challengeSuccess = true;
-            withdrawRecords[withdrawalId].ischallenge = true;
-            withdrawRecords[withdrawalId].whoChallenge = msg.sender;
-        }
-        withdrawRecords[withdrawalId].expiredTime = now + 10 minutes;
-    }
-    
-    function antichallengeWithdrawal(bytes32 withdrawalId,bytes32[] TransactionHash) public payable {
-        require(withdrawRecords[withdrawalId].votingComplete);
-        require(!withdrawRecords[withdrawalId].ispay);
-        require(withdrawRecords[withdrawalId].expiredTime >= now);
-        require(withdrawRecords[withdrawalId].ischallenge);
-        uint amount;
-        for(uint i = 0;i<TransactionHash.length;i++){
-            if(transactionRecords[TransactionHash[i]].to == withdrawRecords[withdrawalId].who){
-                amount += transactionRecords[TransactionHash[i]].amount;
-            }
-        }
-        for(uint ii = 0;ii<TransactionHash.length;ii++){
-            if(transactionRecords[TransactionHash[ii]].form == withdrawRecords[withdrawalId].who){
-                amount -= transactionRecords[TransactionHash[ii]].amount;
-            }
-        }
-        if(amount != withdrawRecords[withdrawalId].amount){
-             withdrawRecords[withdrawalId].ischallenge = false;
-             msg.sender.transfer(1 ether);
-             withdrawRecords[withdrawalId].expiredTime = now + 10 minutes;
-        }
-    }
-    
-    function finalizeWithdrawal(bytes32 withdrawalId) public {
-        require(withdrawRecords[withdrawalId].votingComplete);
-        require(!withdrawRecords[withdrawalId].ispay);
-        require(withdrawRecords[withdrawalId].expiredTime < now);
-        
-        if(withdrawRecords[withdrawalId].ischallenge){
-            //challenge successfully or not
-            withdrawRecords[withdrawalId].whoChallenge.transfer(2 ether);
-        } else {
-            withdrawRecords[withdrawalId].ispay = true;
-            withdrawRecords[withdrawalId].who.transfer(1 ether);
-            plasmatoken.addBalance(withdrawRecords[withdrawalId].who,withdrawRecords[withdrawalId].amount);
-        }
-    }
-    
-    function proveTransaction_Transfer(uint256 blockNumber,uint256 nonce,bytes targetTx,bytes proof) public {
-        
-        BlockHeader memory header = headers[blockNumber];
-        require(header.blockNumber > 0);
-        
-       address who;
+        address who;
        address to;
        bytes4 time;
        bytes8 amount;
-    //   bytes32 sigR;
-    //   bytes32 sigS;
-    //   bytes1 sigV;
-       
+   
        assembly {
            let data := add(targetTx, 0x20)
            who := mload(data)
            to := mload(add(data, 20))
            time := mload(add(data, 52))
            amount := mload(add(data, 56))
-        //   sigR := mload(add(data, 96))
-        //   sigS := mload(add(data, 128))
-        //   sigV := mload(add(data, 160))
-        //   if lt(sigV, 27) { sigV := add(sigV, 27) }
+     
+       }
+       require(who == msg.sender);
+      require(to == 0x0000000000000000000000000000000000000000); 
+         bytes32 TransactionHash =  keccak256(who, to, uint(time), uint(amount));
+
+        require(msg.value == 1 ether);
+        BlockHeader memory header = headers[blockNumber];
+        require(header.blockNumber > 0);
+        require(isValidProof(header.merkleRoot, TransactionHash, proof));
+
+        bytes32 withdrawalId_ = keccak256(msg.sender,amount,now); 
+        WithdrawRecord storage record = withdrawRecords[withdrawalId_];
+        require(record.expiredTime == 0);
+
+        // Construct a new withdrawal.
+        record.blockNumber = blockNumber;
+        record.txIndex = txIndex;
+        record.oIndex = oIndex;
+        record.who = who;
+        record.amount = uint(amount);
+        // record.priority = priority;
+
+        record.who = msg.sender;
+        record.amount =  uint(amount);
+        record.expiredTime = now + 10 minutes;
+        WithdrawalStartedEvent(withdrawalId_);
+        return withdrawalId_;
+    }
+    
+    event WithdrawalPermissionEvent(uint256 withdrawalId);
+    
+    // function persmissionWithdrawal(
+    //     bytes32 withdrawalId
+    // )
+    //     public
+    //     returns (bool permission)
+    // {
+    //     require(verifier[msg.sender]);
+    //     require(withdrawRecords[withdrawalId].vote_permission.length<1);
+    //     // require(!withdrawRecords[withdrawalId].votingComplete);
+
+    //     bool isnotadd = true;
+    //     for(uint8 i =0;i<withdrawRecords[withdrawalId].vote_permission.length;i++){
+    //         if(withdrawRecords[withdrawalId].vote_permission[i] == msg.sender) isnotadd = false;
+    //     }
+    //     if(isnotadd){
+    //         withdrawRecords[withdrawalId].vote_permission.push(msg.sender);
+    //         return true;
+    //     } else
+    //         return true;
+    // }
+    
+    // function voteCompleteWithdrawal(bytes32 withdrawalId) public
+    // {
+    //     require(withdrawRecords[withdrawalId].vote_permission.length>=1);
+    //     require(!withdrawRecords[withdrawalId].ispay);
+    //     // require(!withdrawRecords[withdrawalId].votingComplete);
+                
+    //     uint8 verifierQualified = 0;
+    //     for(uint8 i =0;i<withdrawRecords[withdrawalId].vote_permission.length;i++){
+    //         if(verifier[withdrawRecords[withdrawalId].vote_permission[i]]) verifierQualified++;
+    //     }
+        
+    //     if(verifierQualified >= 1){
+    //         // withdrawRecords[withdrawalId].votingComplete = true;
+    //         withdrawRecords[withdrawalId].expiredTime = now + 10 minutes;
+    //     } 
+    // }
+
+    event WithdrawalChallengedEvent(uint256 withdrawalId);
+
+    function challengeWithdrawal(
+        bytes32 withdrawalId,
+        uint256 blockNumber,
+        uint256 txIndex,
+        uint256 oIndex,
+        bytes targetTx,
+        bytes proof
+        ) 
+         public
+         payable
+        returns (bool success)
+         {
+            address who;
+       address to;
+       bytes4 time;
+       bytes8 amount;
+            assembly {
+           let data := add(targetTx, 0x20)
+           who := mload(data)
+           to := mload(add(data, 20))
+           time := mload(add(data, 52))
+           amount := mload(add(data, 56))
+     
        }
        
-      bytes32 TransactionHash =  keccak256(who, to, uint(time), uint(amount));
-        
-    //   address signer = ecrecover(TransactionHash, uint8(sigV), sigR, sigS);
-       
-    //   require(signer == who);
-       
-        // Check if the transaction is in the block.
+         bytes32 TransactionHash =  keccak256(who, to, uint(time), uint(amount));
+        // require(msg.value == 1 ether);
+        // require(withdrawRecords[withdrawalId].votingComplete);
+        BlockHeader memory header = headers[blockNumber];
+        require(!withdrawRecords[withdrawalId].ispay);
+        require(blockNumber>withdrawRecords[withdrawalId].blockNumber);
+        require(!withdrawRecords[withdrawalId].ischallenge);
         require(isValidProof(header.merkleRoot, TransactionHash, proof));
-        
-        transactionRecords[TransactionHash] = (TransferTransaction(who,to,uint32(time),uint(amount),nonce));
-        
-        //TO DO
-        //count transaction result
-        //if transaction be counted, add to iscount and result
-        //prevent count twice
+        WithdrawRecord storage record = withdrawRecords[withdrawalId];
+
+
+        if (isWithdrawalSpent(targetTx, record)) {
+             record.ischallenge = true;
+            record.whoChallenge = msg.sender;
+            record.ischallenge = true;
+            record.ispay = true;
+            msg.sender.transfer(1 ether);
+
+            return true;
+        }
     }
+    
+    
+    
+    function finalizeWithdrawal(bytes32 withdrawalId) public {
+        require(!withdrawRecords[withdrawalId].ischallenge);
+        require(!withdrawRecords[withdrawalId].ispay);
+        require(withdrawRecords[withdrawalId].expiredTime < now);
+        
+        
+            withdrawRecords[withdrawalId].ispay = true;
+            withdrawRecords[withdrawalId].who.transfer(1 ether);
+            plasmatoken.addBalance(withdrawRecords[withdrawalId].who,withdrawRecords[withdrawalId].amount);
+       
+    }
+    
+    // function proveTransaction_Transfer(uint256 blockNumber,uint256 nonce,bytes targetTx,bytes proof) public {
+        
+    //     BlockHeader memory header = headers[blockNumber];
+    //     require(header.blockNumber > 0);
+        
+    //   address who;
+    //   address to;
+    //   bytes4 time;
+    //   bytes8 amount;
+
+       
+    //   assembly {
+    //       let data := add(targetTx, 0x20)
+    //       who := mload(data)
+    //       to := mload(add(data, 20))
+    //       time := mload(add(data, 52))
+    //       amount := mload(add(data, 56))
+    //   }
+       
+    //   bytes32 TransactionHash =  keccak256(who, to, uint(time), uint(amount));
+        
+    // //   address signer = ecrecover(TransactionHash, uint8(sigV), sigR, sigS);
+       
+    // //   require(signer == who);
+       
+    //     // Check if the transaction is in the block.
+    //     require(isValidProof(header.merkleRoot, TransactionHash, proof));
+        
+    //     transactionRecords[TransactionHash] = (TransferTransaction(who,to,uint32(time),uint(amount),nonce));
+        
+    //     //TO DO
+    //     //count transaction result
+    //     //if transaction be counted, add to iscount and result
+    //     //prevent count twice
+    // }
 
     event WithdrawalCompleteEvent(uint256 indexed blockNumber,
         uint256 exitBlockNumber, uint256 exitTxIndex, uint256 exitOIndex);
@@ -392,6 +419,30 @@ contract PlasmaChainManager {
             }
         }
         return hash == root;
+    }
+    
+        function isWithdrawalSpent(bytes targetTx, WithdrawRecord record)
+        view
+        internal
+        returns (bool spent)
+    {
+         address who;
+       address to;
+       bytes4 time;
+       bytes8 amount;
+
+       
+       assembly {
+           let data := add(targetTx, 0x20)
+           who := mload(data)
+           to := mload(add(data, 20))
+           time := mload(add(data, 52))
+           amount := mload(add(data, 56))
+       }
+       require(who == record.who);
+
+        // Check two inputs individually if it spent the given withdrawal.
+       return true;
     }
 
 }
